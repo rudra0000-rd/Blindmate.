@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Controlled App</title>
+<style>
+  body {
+    font-family: "Poppins", sans-serif;
+    background: linear-gradient(135deg, #4facfe, #00f2fe);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+  }
+
+  .container {
+    background: white;
+    padding: 30px;
+    border-radius: 16px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    width: 320px;
+    text-align: center;
+  }
+
+  input, button {
+    width: 90%;
+    padding: 10px;
+    margin: 8px 0;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 14px;
+  }
+
+  button {
+    background: #4facfe;
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: 0.3s;
+  }
+
+  button:hover {
+    background: #00c6ff;
+  }
+
+  /* HOME PAGE */
+  .home, .payment-page {
+    display: none;
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    background: linear-gradient(120deg, #89f7fe, #66a6ff);
+    color: white;
+    text-align: center;
+  }
+
+  .buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin: 60px 40px;
+  }
+
+  .buttons button {
+    background: white;
+    color: #333;
+    font-weight: bold;
+    border: none;
+    border-radius: 12px;
+    padding: 20px;
+    cursor: pointer;
+    transition: 0.3s;
+  }
+
+  .buttons button:hover {
+    background: #e0f7ff;
+  }
+
+  .menu {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    font-size: 22px;
+    cursor: pointer;
+  }
+
+  .dropdown {
+    display: none;
+    position: absolute;
+    top: 50px;
+    right: 15px;
+    background: white;
+    color: #333;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    min-width: 120px;
+    text-align: left;
+    z-index: 10;
+  }
+
+  .dropdown a {
+    display: block;
+    padding: 10px;
+    text-decoration: none;
+    color: #333;
+  }
+
+  .dropdown a:hover {
+    background: #f0f0f0;
+  }
+
+  .settings {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(255,255,255,0.9);
+    color: #333;
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .back {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    font-size: 20px;
+    background: rgba(255,255,255,0.8);
+    padding: 6px 12px;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .mic-btn {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    background: red;
+    color: white;
+    border: none;
+    padding: 12px;
+    border-radius: 50%;
+    font-size: 18px;
+    cursor: pointer;
+    box-shadow: 0 0 10px rgba(0,0,0,0.3);
+  }
+
+  .mic-btn.active {
+    background: green;
+  }
+
+  /* Payment Page */
+  .payment-box {
+    background: rgba(255,255,255,0.9);
+    color: #333;
+    width: 80%;
+    margin: 100px auto;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+  }
+
+  .finger-scan {
+    position: absolute;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255,255,255,0.9);
+    border-radius: 50%;
+    width: 90px;
+    height: 90px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 30px;
+    color: #333;
+    box-shadow: 0 0 15px rgba(0,0,0,0.3);
+    animation: pulse 2s infinite;
+    cursor: pointer;
+  }
+
+  @keyframes pulse {
+    0% { transform: translateX(-50%) scale(1); }
+    50% { transform: translateX(-50%) scale(1.1); }
+    100% { transform: translateX(-50%) scale(1); }
+  }
+</style>
+</head>
+<body>
+
+<!-- LOGIN PAGE -->
+<div class="container" id="loginPage">
+  <h2>🔐 User Login</h2>
+  <input id="loginInput" placeholder="Phone Number or Email">
+  <button onclick="login()">Login</button>
+</div>
+
+<!-- HOME PAGE -->
+<div class="home" id="homePage">
+  <div class="back" onclick="goBack()">←</div>
+  <div class="menu" onclick="toggleMenu()">⋮</div>
+
+  <div class="dropdown" id="dropdownMenu">
+    <a href="#">Profile</a>
+    <a href="#">Help</a>
+    <a href="#" onclick="logout()">Logout</a>
+  </div>
+
+  <h2>🏠 Home Page</h2>
+
+  <div class="buttons">
+    <button onclick="openNavigation()">🧭 Navigation</button>
+    <button onclick="openObjectDetection()">🎯 Object Detection</button>
+    <button onclick="openPayment()">💳 Payment</button>
+    <button>📁 More</button>
+  </div>
+
+  <div class="settings" onclick="openSettings()">⚙️ Settings</div>
+  <button class="mic-btn" id="micButton" onclick="toggleVoice()">🎤</button>
+</div>
+
+<!-- PAYMENT PAGE -->
+<div class="payment-page" id="paymentPage">
+  <div class="back" onclick="backToHome()">←</div>
+  <h2>💳 Payment</h2>
+  <div class="payment-box">
+    <input id="upiId" placeholder="Enter UPI ID">
+    <input id="amount" placeholder="Enter Amount (₹)" type="number">
+  </div>
+  <div class="finger-scan" onclick="confirmPayment()">🖐️</div>
+</div>
+
+<script>
+let recognition, recognizing = false;
+
+function speak(text) {
+  const msg = new SpeechSynthesisUtterance(text);
+  msg.lang = "en-IN";
+  window.speechSynthesis.speak(msg);
+}
+
+function login() {
+  const input = document.getElementById("loginInput").value.trim();
+  if (!input) { alert("Please enter phone number or email!"); return; }
+
+  document.getElementById("loginPage").style.display = "none";
+  document.getElementById("homePage").style.display = "block";
+  speak("Welcome! Say Navigation, Object Detection, or Payment to continue.");
+  startVoiceRecognition();
+}
+
+function goBack() {
+  stopVoiceRecognition();
+  document.getElementById("homePage").style.display = "none";
+  document.getElementById("loginPage").style.display = "block";
+}
+
+function toggleMenu() {
+  const menu = document.getElementById("dropdownMenu");
+  menu.style.display = (menu.style.display === "block") ? "none" : "block";
+}
+
+window.onclick = (e) => {
+  if (!e.target.matches('.menu')) {
+    const menu = document.getElementById("dropdownMenu");
+    if (menu.style.display === "block") menu.style.display = "none";
+  }
+};
+
+function logout() {
+  alert("Logged out successfully!");
+  goBack();
+}
+
+function openNavigation() {
+  speak("Navigation started. Please say your destination.");
+  if (!recognition) startVoiceRecognition();
+
+  recognition.onresult = (event) => {
+    const command = event.results[event.results.length - 1][0].transcript.toLowerCase();
+    console.log("Navigation command:", command);
+    if (command.includes("go to") || command.includes("navigate to")) {
+      const destination = command.replace("go to", "").replace("navigate to", "").trim();
+      speak(`Navigating to ${destination}`);
+      window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`, "_blank");
+    }
+  };
+}
+
+function openObjectDetection() {
+  speak("Opening object detection.");
+  alert("Object Detection activated.");
+}
+
+function openPayment() {
+  speak("Opening payment page. Please say or enter UPI ID and amount, then scan your finger to confirm.");
+  document.getElementById("homePage").style.display = "none";
+  document.getElementById("paymentPage").style.display = "block";
+}
+
+function openSettings() {
+  speak("Opening settings.");
+  alert("Settings page opened.");
+}
+
+function backToHome() {
+  document.getElementById("paymentPage").style.display = "none";
+  document.getElementById("homePage").style.display = "block";
+  speak("Returned to home. You can say Navigation, Payment, or Object Detection.");
+}
+
+function confirmPayment() {
+  const upi = document.getElementById("upiId").value;
+  const amt = document.getElementById("amount").value;
+  if (!upi || !amt) {
+    alert("Please fill UPI ID and Amount before scanning!");
+    return;
+  }
+  speak(`Payment of rupees ${amt} to ${upi} successful.`);
+  alert(`✅ Payment of ₹${amt} sent to ${upi}`);
+  backToHome();
+}
+
+// Voice Control
+function startVoiceRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { alert("Speech Recognition not supported in this browser."); return; }
+
+  recognition = new SR();
+  recognition.lang = "en-IN";
+  recognition.continuous = true;
+
+  recognition.onresult = (event) => {
+    const command = event.results[event.results.length - 1][0].transcript.toLowerCase();
+    console.log("Voice Command:", command);
+
+    if (command.includes("navigation")) openNavigation();
+    else if (command.includes("object")) openObjectDetection();
+    else if (command.includes("payment")) openPayment();
+    else if (command.includes("settings")) openSettings();
+    else if (command.includes("back")) backToHome();
+  };
+
+  recognition.onend = () => {
+    if (recognizing) recognition.start();
+  };
+
+  recognition.start();
+  recognizing = true;
+  document.getElementById("micButton").classList.add("active");
+}
+
+function stopVoiceRecognition() {
+  if (recognition) recognition.stop();
+  recognizing = false;
+  document.getElementById("micButton").classList.remove("active");
+}
+
+function toggleVoice() {
+  if (recognizing) stopVoiceRecognition();
+  else startVoiceRecognition();
+}
+</script>
+
+</body>
+</html>
+

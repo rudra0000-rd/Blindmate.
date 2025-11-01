@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>AI Voice Navigator Assistant — Single File</title>
+
+<!-- TensorFlow COCO-SSD and Tesseract -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.4/dist/tesseract.min.js"></script>
+
+<style>
+  :root{--accent:#4facfe;--bg1:#89f7fe;--bg2:#66a6ff}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Poppins,Segoe UI,Roboto,Arial; height:100vh; overflow:hidden; background:linear-gradient(120deg,var(--bg1),var(--bg2)); color:#0b2746}
+  /* Layout */
+  .screen{display:none; width:100%; height:100vh; position:relative}
+  .visible{display:block}
+  .center-box{width:320px;margin:60px auto;padding:22px;background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(2,6,23,0.12); text-align:center}
+  input,button{width:100%;padding:10px;margin:8px 0;border-radius:8px;border:1px solid #ddd;font-size:15px}
+  button{background:var(--accent);color:#fff;border:none;cursor:pointer}
+  .home-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:28px}
+  .card{background:#fff;padding:18px;border-radius:12px;color:#222;font-weight:600;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,0.08)}
+  .mic-btn{position:fixed;right:20px;bottom:20px;width:64px;height:64px;border-radius:50%;background:green;color:#fff;border:none;font-size:24px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,0.25)}
+  .back{position:absolute;left:16px;top:16px;background:#fff;padding:8px 10px;border-radius:50%;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,0.12)}
+  /* Map / video / canvas fullscreen */
+  iframe, video, canvas{width:100%;height:100%;object-fit:cover;border:0}
+  .page-full{display:none;position:relative;height:100vh;width:100%}
+  .status-box{position:absolute;left:50%;transform:translateX(-50%);bottom:18px;background:rgba(0,0,0,0.55);color:#fff;padding:10px 16px;border-radius:10px}
+  .finger-modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;color:#000;padding:24px;border-radius:12px;box-shadow:0 20px 60px rgba(2,6,23,0.4);display:none;z-index:9999;text-align:center}
+  .finger-icon{width:96px;height:96px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:10px auto;font-size:44px;background:linear-gradient(180deg,#fff,#eee);box-shadow:0 8px 24px rgba(0,0,0,0.12)}
+  .small-note{font-size:13px;color:#444;margin-top:6px}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<section id="loginScreen" class="screen visible">
+  <div class="center-box">
+    <h2>🔐 Voice Login</h2>
+    <input id="loginInput" placeholder="Phone or Email" />
+    <button id="loginBtn">Login</button>
+    <p style="font-size:13px;color:#666;margin-top:8px">After login, the assistant voice will activate. Allow mic & camera when asked.</p>
+  </div>
+</section>
+
+<!-- HOME SCREEN -->
+<section id="homeScreen" class="screen">
+  <div class="center-box" style="width:420px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h2 style="margin:0">🏠 Home</h2>
+      <button id="logoutBtn" class="back" title="Logout">←</button>
+    </div>
+
+    <div class="home-grid">
+      <div class="card" id="navCard">🧭 Open Navigation</div>
+      <div class="card" id="objCard">🎯 Open Object Detection</div>
+      <div class="card" id="payCard">💳 Open Payment</div>
+      <div class="card" id="readerCard">📖 Open Reader</div>
+    </div>
+
+    <p style="margin-top:18px;color:#555;font-size:13px">You can also use voice: "open navigation", "open payment", "open object", "open reader".</p>
+  </div>
+</section>
+
+<!-- NAVIGATION PAGE (embedded map) -->
+<section id="navScreen" class="page-full">
+  <button class="back" onclick="goHome()">←</button>
+  <iframe id="mapFrame" src="https://www.google.com/maps?q=India&output=embed" allowfullscreen loading="lazy"></iframe>
+  <div class="status-box" id="navStatus">🧭 Navigation — say "go to &lt;place&gt;"</div>
+</section>
+
+<!-- OBJECT DETECTION PAGE -->
+<section id="objectScreen" class="page-full" style="background:#000">
+  <button class="back" onclick="stopDetection()">←</button>
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="overlay"></canvas>
+  <div class="status-box" id="objStatus">🎯 Object Detection — loading model...</div>
+</section>
+
+<!-- PAYMENT PAGE -->
+<section id="paymentScreen" class="page-full" style="background:linear-gradient(120deg,#fff,#f7f9fb);">
+  <button class="back" onclick="goHome()">←</button>
+  <div style="position:absolute;left:50%;top:10%;transform:translateX(-50%);width:360px;background:#fff;padding:18px;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.12)">
+    <h3 style="margin:0 0 8px 0">💳 Payment</h3>
+    <input id="upiInput" placeholder="UPI ID (voice: say 'UPI ...')" />
+    <input id="amountInput" placeholder="Amount (voice: say 'amount ...')" type="number" />
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button id="proceedBtn">Proceed</button>
+      <button id="cancelPayBtn" style="background:#777">Cancel</button>
+    </div>
+    <p style="font-size:13px;color:#444;margin-top:8px">Voice: say "upi user at bank" (or "set upi to user@bank") and "amount 500", then "proceed".</p>
+  </div>
+
+  <div class="status-box" id="payStatus">🔊 Payment — waiting</div>
+</section>
+
+<!-- READER PAGE -->
+<section id="readerScreen" class="page-full">
+  <button class="back" onclick="goHome()">←</button>
+  <video id="readerVideo" autoplay playsinline muted></video>
+  <div style="position:absolute;left:50%;top:10%;transform:translateX(-50%);width:320px;background:rgba(255,255,255,0.95);color:#000;padding:14px;border-radius:10px">
+    <button id="captureBtn">📸 Capture & Read</button>
+    <p id="readerText" style="margin-top:10px;font-size:14px;color:#222;min-height:48px"></p>
+  </div>
+</section>
+
+<!-- FINGERPRINT MODAL (simulated) -->
+<div id="fingerModal" class="finger-modal" role="dialog" aria-modal="true">
+  <div style="font-weight:700">Scan fingerprint to confirm</div>
+  <div class="finger-icon" id="fingerIcon">🔒</div>
+  <div class="small-note">Place finger (tap) to complete</div>
+  <div style="margin-top:12px"><button id="fingerCancelBtn" style="background:#777;color:#fff">Cancel</button></div>
+</div>
+
+<!-- Microphone control -->
+<button id="micBtn" class="mic-btn" title="Toggle voice">🎤</button>
+
+<script>
+/* -----------------------
+   Globals & helpers
+   ----------------------- */
+let recognition = null;
+let recognizing = false;
+let currentScreen = 'login'; // login, home, nav, object, payment, reader
+let cocoModel = null;
+let detectLoopRunning = false;
+let objectStream = null;
+let voiceAllowedStart = false; // to avoid auto-start issues in some browsers
+
+// speak helper
+function speak(text){
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-IN';
+    speechSynthesis.speak(u);
+  } catch (e) { console.warn('TTS failed', e); }
+  // also show a status message in relevant pages
+  const statusEls = {
+    nav: document.getElementById('navStatus'),
+    obj: document.getElementById('objStatus'),
+    pay: document.getElementById('payStatus')
+  };
+  if (currentScreen === 'nav' && statusEls.nav) statusEls.nav.innerText = text;
+  if (currentScreen === 'object' && statusEls.obj) statusEls.obj.innerText = text;
+  if (currentScreen === 'payment' && statusEls.pay) statusEls.pay.innerText = text;
+}
+
+/* -----------------------
+   Screen navigation helpers
+   ----------------------- */
+function showScreen(name){
+  // hide all screens
+  document.querySelectorAll('.screen, .page-full').forEach(s=>s.classList.remove('visible'));
+  // special handling
+  document.getElementById('loginScreen').classList.remove('visible');
+  document.getElementById('homeScreen').classList.remove('visible');
+  document.getElementById('navScreen').style.display='none';
+  document.getElementById('objectScreen').style.display='none';
+  document.getElementById('paymentScreen').style.display='none';
+  document.getElementById('readerScreen').style.display='none';
+
+  // stop detection camera when leaving object
+  if (currentScreen === 'object' && name !== 'object') stopDetection();
+
+  currentScreen = name;
+  if (name === 'login') {
+    document.getElementById('loginScreen').classList.add('visible');
+  } else if (name === 'home') {
+    document.getElementById('homeScreen').classList.add('visible');
+  } else if (name === 'nav') {
+    document.getElementById('navScreen').style.display='block';
+    // update status
+    document.getElementById('navStatus').innerText = '🧭 Navigation — say "go to <place>"';
+  } else if (name === 'object') {
+    document.getElementById('objectScreen').style.display='block';
+  } else if (name === 'payment') {
+    document.getElementById('paymentScreen').style.display='block';
+    document.getElementById('payStatus').innerText = '🔊 Payment — listening for UPI / amount / proceed';
+  } else if (name === 'reader') {
+    document.getElementById('readerScreen').style.display='block';
+  }
+}
+
+/* -----------------------
+   Login & UI wiring
+   ----------------------- */
+document.getElementById('loginBtn').addEventListener('click', ()=> {
+  const v = document.getElementById('loginInput').value.trim();
+  if (!v) { alert('Enter phone or email'); return; }
+  showScreen('home');
+  speak('Welcome! Voice control activated. Say open navigation, open payment, open object detection or open reader. Or tap the mic.');
+  // attempt to start voice recognition (must be started after user gesture)
+  startVoiceRecognition();
+});
+
+document.getElementById('logoutBtn').addEventListener('click', ()=> {
+  stopVoiceRecognition();
+  showScreen('login');
+});
+
+// home cards
+document.getElementById('navCard').addEventListener('click', ()=> openNavigation());
+document.getElementById('objCard').addEventListener('click', ()=> openObjectDetection());
+document.getElementById('payCard').addEventListener('click', ()=> openPayment());
+document.getElementById('readerCard').addEventListener('click', ()=> openReader());
+
+// mic button (user gesture might be required to enable recognition)
+document.getElementById('micBtn').addEventListener('click', ()=>{
+  // If not yet started by login, treat as gesture to allow speech
+  if (!recognizing) startVoiceRecognition();
+  else stopVoiceRecognition();
+});
+
+/* -----------------------
+   Voice recognition
+   ----------------------- */
+function startVoiceRecognition(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    alert('SpeechRecognition not supported in this browser. Use Chrome/Edge with mic permission.');
+    return;
+  }
+  if (recognizing) return;
+  try {
+    recognition = new SR();
+  } catch (err) {
+    alert('SpeechRecognition init failed: ' + err);
+    return;
+  }
+  recognition.lang = 'en-IN';
+  recognition.continuous = true;
+  recognition.interimResults = false;
+
+  recognition.onstart = () => {
+    recognizing = true;
+    document.getElementById('micBtn').style.background = 'green';
+  };
+
+  recognition.onend = () => {
+    recognizing = false;
+    document.getElementById('micBtn').style.background = 'gray';
+    // Auto-restart unless user is on login screen
+    if (currentScreen !== 'login') {
+      // small delay then restart to keep continuous flow
+      setTimeout(()=> {
+        try { recognition.start(); recognizing = true; } catch(e){ /* ignore */ }
+      }, 500);
+    }
+  };
+
+  recognition.onerror = (ev) => {
+    console.warn('recognition error', ev);
+  };
+
+  recognition.onresult = (ev) => {
+    const last = ev.results[ev.results.length-1][0].transcript.trim().toLowerCase();
+    console.log('Heard:', last);
+    handleVoiceCommand(last);
+  };
+
+  try { recognition.start(); } catch(e){ console.warn(e); }
+  // visual
+  document.getElementById('micBtn').style.background = 'green';
+}
+
+/* stop */
+function stopVoiceRecognition(){
+  if (recognition) {
+    try { recognition.onresult = null; recognition.stop(); } catch(e) {}
+  }
+  recognizing = false;
+  document.getElementById('micBtn').style.background = 'gray';
+}
+
+/* toggle */
+function toggleVoice(){ recognizing?stopVoiceRecognition():startVoiceRecognition(); }
+
+/* -----------------------
+   Voice command router
+   ----------------------- */
+function handleVoiceCommand(text){
+  // navigation commands
+  if (text.includes('open navigation')) { openNavigation(); return; }
+  if (text.includes('open object') || text.includes('open object detection')) { openObjectDetection(); return; }
+  if (text.includes('open payment') || text.includes('open pay')) { openPayment(); return; }
+  if (text.includes('open reader') || text.includes('text reader')) { openReader(); return; }
+  if (text.includes('go home') || text.includes('home')) { goHome(); return; }
+
+  // "go to <place>" navigation inside nav screen
+  if ((text.startsWith('go to ') || text.startsWith('navigate to ')) && currentScreen === 'nav') {
+    const dest = text.replace(/^go to |^navigate to /, '').trim();
+    if (dest) {
+      speak('Navigating to ' + dest);
+      document.getElementById('mapFrame').src = `https://www.google.com/maps?q=${encodeURIComponent(dest)}&output=embed`;
+    }
+    return;
+  }
+
+  // Payment-specific voice parsing (in payment screen)
+  if (currentScreen === 'payment') {
+    // UPI capture: phrases containing 'upi' or 'upi id' etc.
+    if (text.includes('upi')) {
+      // extract token after 'upi' or 'set upi to' etc.
+      let upi = text.replace(/.*(?:set upi to|upi id is|upi id|upi is|set upi|upi)\s*/, '').trim();
+      // convert spoken ' at ' to '@' and remove spaces inside UPI token
+      upi = upi.replace(/\s+at\s+/g, '@').replace(/\s/g, '');
+      if (upi) {
+        document.getElementById('upiInput').value = upi;
+        speak('UPI set to ' + upi);
+      } else {
+        speak('I did not catch the UPI id. Please say "UPI user at bank" or type it.');
+      }
+      return;
+    }
+
+    // Amount capture: capture number words/digits
+    if (text.includes('amount') || text.match(/\b\d+\b/)) {
+      // find a number in the phrase
+      const match = text.match(/(\d{1,9})/);
+      if (match) {
+        const val = match[1];
+        document.getElementById('amountInput').value = val;
+        speak('Amount set to ' + val + ' rupees');
+      } else {
+        speak('I could not find the amount. Say "amount 500"');
+      }
+      return;
+    }
+
+    // proceed -> trigger fingerprint flow
+    if (text.includes('proceed') || text.includes('pay') || text.includes('confirm') || text.includes('send')) {
+      // click proceed button programmatically
+      document.getElementById('proceedBtn').click();
+      return;
+    }
+  }
+
+  // Object detection start via voice (from home or anywhere)
+  if (text.includes('start detection') || text.includes('start object')) {
+    openObjectDetection();
+    return;
+  }
+
+  // fallback
+  console.log('No command matched for:', text);
+}
+
+/* -----------------------
+   Navigation flow
+   ----------------------- */
+function openNavigation(){
+  stopVoiceRecognition();
+  showScreen('nav');
+  // speak instruction
+  speak('Navigation opened. Say "go to" followed by your destination.');
+  // keep voice active
+  startVoiceRecognition();
+}
+
+/* -----------------------
+   Object detection
+   ----------------------- */
+async function openObjectDetection(){
+  stopVoiceRecognition();
+  showScreen('object');
+  document.getElementById('objStatus').innerText = '🎯 Object Detection — loading model...';
+  speak('Starting object detection. Please allow camera.');
+  try {
+    if (!cocoModel) {
+      cocoModel = await cocoSsd.load();
+      console.log('COCO-SSD model loaded');
+    }
+    // start camera
+    const vid = document.getElementById('video');
+    objectStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    vid.srcObject = objectStream;
+    await vid.play();
+
+    // size canvas
+    const canvas = document.getElementById('overlay');
+    canvas.width = vid.videoWidth || window.innerWidth;
+    canvas.height = vid.videoHeight || window.innerHeight;
+    detectLoopRunning = true;
+
+    // detection loop
+    (function detectLoop(){
+      if (!detectLoopRunning) return;
+      cocoModel.detect(vid).then(predictions => {
+        const ctx = canvas.getContext('2d');
+        // match canvas size to video
+        canvas.width = vid.videoWidth || canvas.width;
+        canvas.height = vid.videoHeight || canvas.height;
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        predictions.forEach(p => {
+          const [x,y,w,h] = p.bbox;
+          ctx.strokeStyle = '#00FF88';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(x,y,w,h);
+          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+          ctx.fillRect(x, y - 20 < 0 ? y : y - 20, ctx.measureText(p.class).width + 12, 20);
+          ctx.fillStyle = '#fff';
+          ctx.fillText(p.class + ' ' + Math.round(p.score*100) + '%', x+6, y - 16 < 0 ? y + 4 : y - 16);
+        });
+      }).catch(e=>{
+        console.warn('detect error', e);
+      }).finally(()=> {
+        requestAnimationFrame(detectLoop);
+      });
+    })();
+
+    speak('Object detection running.');
+  } catch (err) {
+    console.error('object detection error', err);
+    speak('Camera or model error: ' + (err.message || err));
+  }
+}
+
+function stopDetection(){
+  detectLoopRunning = false;
+  if (objectStream) {
+    objectStream.getTracks().forEach(t=>t.stop());
+    objectStream = null;
+  }
+  // hide object screen and return home
+  showScreen('home');
+  // resume voice
+  startVoiceRecognition();
+}
+
+/* -----------------------
+   Payment flow (voice-controlled)
+   ----------------------- */
+document.getElementById('proceedBtn').addEventListener('click', ()=> {
+  // Check UPI & amount
+  const upi = document.getElementById('upiInput').value.trim();
+  const amt = document.getElementById('amountInput').value.trim();
+  if (!upi || !amt) {
+    speak('Please set both UPI id and amount before proceeding.');
+    return;
+  }
+  // open fingerprint modal
+  openFingerprintModal(upi, amt);
+});
+
+document.getElementById('cancelPayBtn').addEventListener('click', ()=>{
+  goHome();
+});
+
+function openPayment(){
+  stopVoiceRecognition();
+  showScreen('payment');
+  speak('Payment page opened. Say UPI id and amount, then say proceed to pay.');
+  // keep voice listening for set UPI / amount / proceed
+  startVoiceRecognition();
+}
+
+/* Fingerprint modal simulation */
+function openFingerprintModal(upi, amt){
+  const fm = document.getElementById('fingerModal');
+  fm.style.display = 'block';
+  // attach handler for "tap"
+  const icon = document.getElementById('fingerIcon');
+  const cancel = document.getElementById('fingerCancelBtn');
+  icon.innerText = '🔒';
+  icon.style.transform = 'scale(1)';
+  const onScan = () => {
+    // simulate scanning animation
+    icon.innerText = '🔄';
+    icon.style.transform = 'scale(1.08)';
+    speak('Scanning fingerprint...');
+    setTimeout(()=> {
+      fm.innerHTML = `<div style="font-weight:700">✅ Payment Complete</div>
+                      <div class="small-note" style="margin-top:8px">Paid ₹${amt} to ${upi}</div>
+                      <div style="margin-top:10px"><button id="closeFinger">Close</button></div>`;
+      document.getElementById('closeFinger').addEventListener('click', ()=> {
+        fm.style.display='none';
+        goHome();
+      });
+      speak(`Payment of ${amt} rupees to ${upi} completed successfully.`);
+    }, 1400);
+  };
+  icon.onclick = onScan;
+  cancel.onclick = ()=> { fm.style.display='none'; speak('Payment cancelled'); };
+}
+
+/* -----------------------
+   Reader (OCR)
+   ----------------------- */
+async function openReader(){
+  stopVoiceRecognition();
+  showScreen('reader');
+  speak('Text reader opened. Allow camera. Then press Capture and Read.');
+  const v = document.getElementById('readerVideo');
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    v.srcObject = stream;
+    await v.play();
+  } catch (err) {
+    console.warn('reader camera error', err);
+    speak('Cannot access camera for reader.');
+  }
+}
+
+document.getElementById('captureBtn').addEventListener('click', async ()=>{
+  const v = document.getElementById('readerVideo');
+  const canvas = document.createElement('canvas');
+  canvas.width = v.videoWidth || 640;
+  canvas.height = v.videoHeight || 480;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+  speak('Reading text, please wait.');
+  try {
+    const { data: { text } } = await Tesseract.recognize(canvas, 'eng', { logger: m => console.log(m) });
+    document.getElementById('readerText').innerText = text.trim() || 'No text found';
+    speak(text ? text.split('\n')[0] : 'No text detected');
+  } catch (err) {
+    console.error('ocr error', err);
+    speak('OCR failed');
+  }
+});
+
+/* -----------------------
+   Utilities: openPayment via voice continues
+   ----------------------- */
+function goHome(){
+  stopVoiceRecognition();
+  showScreen('home');
+  // restart listening
+  startVoiceRecognition();
+}
+
+/* -----------------------
+   Auto-wire home card click (for when login not used)
+   ----------------------- */
+document.getElementById('navCard').onclick = openNavigation;
+document.getElementById('objCard').onclick = openObjectDetection;
+document.getElementById('payCard').onclick = openPayment;
+document.getElementById('readerCard').onclick = openReader;
+
+/* -----------------------
+   Initialize: show login
+   ----------------------- */
+showScreen('login');
+
+// Tip: try clicking the mic button after login if voice doesn't start
+</script>
+</body>
+</html>
